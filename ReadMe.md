@@ -134,3 +134,127 @@ process.on("beforeExit", async () => {
 
 export default prisma;
 ```
+### Step 7 Middleware setup and start Server
+#### step 7.1 .env customize path for core() and PORT no.
+```env
+PORT=8887 // backend port
+
+DATABASE_URL="mysql://root:pooSQL123@localhost:3306/db_login_with_social_01"
+
+CLIENT_URL="http://localhost:5173"
+```
+#### step 7.2 src/middlewares/error.middleware.js prepare file.js for all other error handling
+```js
+import { ZodError } from "zod";
+
+const errorMiddleware = (err, req, res, next) => {
+  let error = err;
+
+  if(error instanceof ZodError) {
+    const validateErrors = error.errors.reduce((acc, cur) => (
+      {
+        ...acc,
+        [cur.path[0]]: cur.message
+      }
+    ), {});
+
+    error.errors = validateErrors;
+  }
+
+  res.status(...error, err.statusCode || 500).json({ message: err.message || 'Somthing went wrong' });
+}
+
+export default errorMiddleware;
+```
+#### step 7.3 src/app.js import middleware and use
+```js
+import express from 'express';
+import cors from 'cors';
+import helmet from 'helmet';
+import cookieParser from 'cookie-parser';
+
+const app = express();
+
+app.use(helmet());
+app.use(cors({
+  origin: process.env.CLIENT_URL,
+  credentials: true,
+})); // Enable CORS for the client URL
+
+app.use(express.json()); // Prase JSON body, req.body
+
+app.use(cookieParser()); // Parse Cookie header and populate req.cookies, req.cookies
+
+// API routes
+
+// not found route
+
+// Error handling middleware
+
+export default app;
+```
+#### step 7.4 src/app.js import src/middlewares/error.middleware.js and use at end of file app.js
+```js
+import express from 'express';
+import cors from 'cors';
+import helmet from 'helmet';
+import cookieParser from 'cookie-parser';
+import errorMiddleware from './middlewares/error.middleware.js'; <-- make sure there .js (dot js)
+
+const app = express();
+
+app.use(helmet());
+app.use(cors({
+  origin: process.env.CLIENT_URL,
+  credentials: true,
+})); // Enable CORS for the client URL
+
+app.use(express.json()); // Prase JSON body, req.body
+
+app.use(cookieParser()); // Parse Cookie header and populate req.cookies, req.cookies
+
+// API routes
+
+// not found route
+
+// Error handling middleware
+app.use(errorMiddleware); <-- call errorMiddleware
+
+export default app;
+```
+#### step 7.5 src/app.js add code for handle path not found
+```js
+// not found route
+// Handle 404 errors for undefined routes
+app.use((req, res) => {
+  res.status(404).json({ message: `path not found ${req.method} ${req.url}` }); 
+});
+```
+#### step 7.6 src/server.js add for running server
+```js
+import app from './app.js';
+
+const PORT = process.env.PORT || 8887;
+
+app.listen(PORT, () => {
+  console.log(`Server is running on port ${PORT}`);
+})
+```
+#### step 7.6 at Terminal, run server
+```bash
+npm run dev
+```
+#### step 7.8 package.json correct warning [MODULE_TYPELESS_PACKAGE_JSON]
+```json
+  "name": "server01",
+  "version": "1.0.0",
+  "main": "index.js",
+  "type": "module", <-- add this line, don't forget comma ","
+```
+```js
+then get message 
+[nodemon] restarting due to changes...
+[nodemon] starting `node src/server.js`
+Server is running on port 8887
+```
+
