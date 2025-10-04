@@ -21,7 +21,7 @@ npm install express cors helmet cookie-parser dotenv argon2 jsonwebtoken node-cr
 ### step 2.4 make common folders under src
  src/config
  src/controllers
- src/middlewars
+ src/middlewares
  src/routes
  src/services
  src/utils
