@@ -3,6 +3,7 @@ import cors from 'cors';
 import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
 import errorMiddleware from './middlewares/error.middleware.js';
+import mainRouter from './routers/main.routes.js';
 
 const app = express();
 
@@ -17,6 +18,7 @@ app.use(express.json()); // Prase JSON body, req.body
 app.use(cookieParser()); // Parse Cookie header and populate req.cookies, req.cookies
 
 // API routes
+app.use("/api/v1", mainRouter);
 
 // not found route
 // Handle 404 errors for undefined routes

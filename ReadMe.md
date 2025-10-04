@@ -257,4 +257,89 @@ then get message
 [nodemon] starting `node src/server.js`
 Server is running on port 8887
 ```
+### Step 8 make Routing
+#### step 8.1 /src/routes/auth.routes.js
+make auth route (only route, no middleware and logic)
+```js
+import { Router } from "express";
 
+const authRouter = Router();
+
+authRouter.post("/register", async (req, res) => {})
+authRouter.post("/login", async (req, res) => {})
+authRouter.post("/refresh-token", async (req, res) => {})
+authRouter.post("/logout", async (req, res) => {})
+
+// Google OAuth
+authRouter.get("/google", async (req, res) => {})
+authRouter.get("/google/callback", async (req, res) => {})
+
+// GitHub OAuth
+authRouter.get("/github", async (req, res) => {})
+authRouter.get("/github/callback", async (req, res) => {})
+
+// Facebook OAuth
+authRouter.get("/facebook", async (req, res) => {})
+authRouter.get("/facebook/callback", async (req, res) => {})
+
+export default authRouter;
+```
+#### step 8.2 /src/routes/user.routers.js
+make user route (only route, no middleware and logic)
+```js
+import { Router } from "express";
+
+const userRouter = Router();
+
+userRouter.get("/me", async (req, res) => {})
+
+export default userRouter;
+```
+#### step 8.3 /src/routes/main.routes.js
+combine all routes (authRoutes, userRoutes) into mainRoutes
+```js
+import { Router } from "express";
+import authRouter from "./auth.routes.js"; // make sure the .js (dot js) is exist at file name
+import userRouter from "./user.routes.js"; // make sure the .js (dot js) is exist at file name
+
+const mainRouter = Router();
+
+mainRouter.use("/auth", authRouter)
+mainRouter.use("/user", userRouter)
+
+export default mainRouter;
+```
+#### step 8.4 /src/app.js
+call and use main.routes.js in app.js
+```js
+import express from "express";
+import cors from "cors";
+import helmet from "helmet";
+import cookieParser from "cookie-parser";
+import errorMiddleware from "./middlewares/error.middleware.js";
+import mainRouter from "./routes/main.routes.js"; // <-- make sure that there .js
+
+const app = express();
+
+app.use(helmet()); // Use Helmet to help secure Express apps with various HTTP headers
+app.use(
+  cors({
+    origin: process.env.CLIENT_URL,
+    credentials: true,
+  })
+); // Enable CORS for all routes and allow credentials (cookies, authorization headers, etc.)
+
+app.use(express.json()); // Parse incoming JSON requests and put the parsed data in req.body
+
+app.use(cookieParser()); // Parse Cookie header and populate req.cookies with an object keyed by the cookie names, req.cookies
+
+// API routes
+app.use("/api/v1", mainRouter); // <-- add this line to use mainRouter
+
+app.use((req, res) => {
+  res.status(404).json({ message: `path not found ${req.method} ${req.url}` }); // Handle 404 errors for undefined routes
+});
+app.use(errorMiddleware); // Error handling middleware
+
+export default app;
+```
