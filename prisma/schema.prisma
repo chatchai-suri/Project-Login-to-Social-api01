@@ -6,10 +6,54 @@
 
 generator client {
   provider = "prisma-client-js"
-  output   = "../generated/prisma"
+  output   = "../src/generated/prisma"
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "mysql"
   url      = env("DATABASE_URL")
+}
+
+model User {
+  id       String  @id @default(cuid())
+  email    String  @unique
+  name     String?
+  password String?
+  coverImg String? @map("cover_img")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamp(0)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamp(0)
+
+  refreshTokens RefreshToken[]
+  accounts      Account[]
+}
+
+model RefreshToken {
+  id        String   @id @default(cuid())
+  hashToken String   @unique @map("hash_token")
+  revoked   Boolean  @default(false)
+  expiresAt DateTime @map("expires_at")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamp(0)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamp(0)
+  // relations
+  user      User?    @relation(fields: [userId], references: [id])
+  userId    String?  @map("user_id")
+}
+
+model Account {
+  id                String @id @default(cuid())
+  type              String // 'oauth'
+  // 'github', 'google', etc.
+  provider          String // 'github', 'google', etc.
+  // the id of the account on the provider's side
+  providerAccountId String @map("provider_account_id")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamp(0)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamp(0)
+  // relations
+  user      User?    @relation(fields: [userId], references: [id])
+  userId    String?  @map("user_id")
+
+  @@unique([provider, providerAccountId])
 }
