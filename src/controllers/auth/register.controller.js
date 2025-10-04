@@ -1,5 +1,5 @@
 import argon2 from "argon2";
-import { prisma } from "../../config/prisma.config.js";
+import prisma from "../../config/prisma.config.js";
 import createError from "../../utils/createError.js";
 
 export default async function registerController(req, res) {

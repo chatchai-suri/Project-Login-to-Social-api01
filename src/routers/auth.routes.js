@@ -1,22 +1,24 @@
 import { Router } from "express";
+import loginController from "../controllers/auth/login.controller.js";
+import registerController from "../controllers/auth/register.controller.js";
 
 const authRouter = Router();
 
-authRouter.post("/register", async (req, res) => {})
-authRouter.post("/login", async (req, res) => {})
-authRouter.post("/refresh-token", async (req, res) => {})
+authRouter.post("/register", registerController)
+authRouter.post("/login", loginController) // generate access token and refresh token
+authRouter.post("/refresh-token", async (req, res) => {}) // generate new access token using refresh token
 authRouter.post("/logout", async (req, res) => {})
 
 // Google OAuth
-authRouter.get("/google", async (req, res) => {})
-authRouter.get("/google/callback", async (req, res) => {})
+authRouter.get("/google", async (req, res) => {}) // redirect to google oauth consent screen
+authRouter.get("/google/callback", async (req, res) => {}) // handle google oauth callback
 
 // GitHub OAuth
-authRouter.get("/github", async (req, res) => {})
-authRouter.get("/github/callback", async (req, res) => {})
+authRouter.get("/github", async (req, res) => {}) // redirect to github oauth consent screen
+authRouter.get("/github/callback", async (req, res) => {}) // handle github oauth callback
 
 // Facebook OAuth
-authRouter.get("/facebook", async (req, res) => {})
-authRouter.get("/facebook/callback", async (req, res) => {})
+authRouter.get("/facebook", async (req, res) => {}) // redirect to facebook oauth consent screen
+authRouter.get("/facebook/callback", async (req, res) => {}) // handle facebook oauth callback
 
 export default authRouter;
