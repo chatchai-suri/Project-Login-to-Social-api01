@@ -14,7 +14,7 @@ export default async function (req, res){
 
 // step 3: check if email & passwaord are correct
   const user = await prisma.user.findUnique({where: { email }, omit: { password: true, createdAt: true, updatedAt: true }
-  });
+  }); // exclude password, createdAt, updatedAt fields from the result
 
   if(!user){
     // if user not found, throw error
@@ -29,19 +29,19 @@ export default async function (req, res){
 
 // step 4: generate access token and refresh token
   const payload = { sub: user.id };
-  const accessToken = jwt.sign(payload, process.env.ACCESS_TOKEN_SECRET, { expiresIn: ACCESS_TOKEN_EXPIRY });
+  const accessToken = jwt.sign(payload, process.env.ACCESS_TOKEN_SECRET, { expiresIn: process.env.ACCESS_TOKEN_EXPIRY });
 
   const refreshTokenId = uuidv4(); // generate unique id for refresh token 
-  const refreshToken = jwt.sign({ jti:refreshTokenId }, process.env.REFRESH_TOKEN_SECRET, { expiresIn: REFRESH_TOKEN_EXPIRY });
+  const refreshToken = jwt.sign({ jti:refreshTokenId }, process.env.REFRESH_TOKEN_SECRET, { expiresIn: process.env.REFRESH_TOKEN_EXPIRY });
 
 // step 5: hash the refresh token id and store it in the database
-  const hashedTokenId = await argon2.hash(refreshTokenId);
+  const hashedRefreshToken = await argon2.hash(refreshToken);
   const expiresAt = new Date(Date.now() + 7*24*60*60*1000); // 7 days and convert to milliseconds 
 
   await prisma.refreshToken.create({
     data: {
       id: refreshTokenId,
-      hashToken: hashedTokenId,
+      hashToken: hashedRefreshToken,
       expiresAt: expiresAt
     }})
 

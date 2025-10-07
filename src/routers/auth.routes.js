@@ -1,12 +1,13 @@
 import { Router } from "express";
 import loginController from "../controllers/auth/login.controller.js";
 import registerController from "../controllers/auth/register.controller.js";
+import refreshTokenController from "../controllers/auth/refreshToken.controller.js";
 
 const authRouter = Router();
 
 authRouter.post("/register", registerController)
 authRouter.post("/login", loginController) // generate access token and refresh token
-authRouter.post("/refresh-token", async (req, res) => {}) // generate new access token using refresh token
+authRouter.post("/refresh-token", refreshTokenController) // generate new access token using refresh token
 authRouter.post("/logout", async (req, res) => {})
 
 // Google OAuth
