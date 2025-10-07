@@ -667,3 +667,101 @@ authRouter.get("/facebook/callback", async (req, res) => {}) // handle facebook 
 
 export default authRouter;
 ```
+### Step 12 Controller logout
+#### step 12.1 src/controllers/logout.controller.js
+```js
+export default async function (req, res) {
+  // There are main 2 jobs in logout controller
+  // 1) clear refresh token assign revoked from flase to be true
+  // 2) clear cookie in the client side
+
+  // step 1: get refresh token from httpOnly cookie
+  const { refreshToken } = req.cookies;
+  if (!refreshToken) {
+    return res.status(200).json({
+      data: null,
+      message: "Already logged out",
+      success: true,
+    });
+  }
+
+  // step 2: verify refresh token
+  let refreshTokenId;
+  try {
+    const payloadRefreshToken = jwt.verify(
+      refreshToken,
+      process.env.REFRESH_TOKEN_SECRET
+    );
+    refreshTokenId = payloadRefreshToken.jti; // get the jti (unique id) from the payload
+  } catch (error) {
+    // if token is invalid or expired, clear cookie and respond success
+    res.clearCookie("refreshToken", {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production", // set secure flag in production, via HTTPS
+      sameSite: "strict", // protect CSRF
+    });
+    throw createError(401, "Invalid or expired refresh token");
+  }
+  // step 3: find the refresh token in the database
+  const findRefreshToken = await prisma.refreshToken.findUnique({
+    where: { id: refreshTokenId },
+  });
+  if (!findRefreshToken || findRefreshToken.revoked) {
+    // if not found, clear cookie and respond success
+    res.clearCookie("refreshToken", {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production", // set secure flag in production, via HTTPS
+      sameSite: "strict"// protect CSRF
+    });
+  }
+  throw createError(401, "session not found or already invalidated");
+
+  // step 4: mark the refresh token as revoked in the database
+  await prisma.refreshToken.update({
+    where: { id: refreshTokenId },
+    data: { revoked: true },
+  }); // mark as revoked
+
+  // step 5: response by clear the refresh token cookie in the client side (clear cookie legally logout rather than just expire or invalid as in step 3 and above)
+  res.clearCookie("refreshToken", {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production", // set secure flag in production, via HTTPS
+    sameSite: "strict", // protect CSRF
+  });
+
+  res.status(200).json({
+    data: null,
+    message: "Logout successful",
+    success: true,
+  });
+}
+```
+#### step 12.2 src/routers/auth.routes.js update
+```js
+import { Router } from "express";
+import loginController from "../controllers/auth/login.controller.js";
+import registerController from "../controllers/auth/register.controller.js";
+import refreshTokenController from "../controllers/auth/refreshToken.controller.js";
+import logoutController from "../controllers/auth/logout.controller.js";
+
+const authRouter = Router();
+
+authRouter.post("/register", registerController)
+authRouter.post("/login", loginController) // generate access token and refresh token
+authRouter.post("/refresh-token", refreshTokenController) // generate new access token using refresh token
+authRouter.post("/logout", logoutController) // logout user and revoke refresh token <-- update
+
+// Google OAuth
+authRouter.get("/google", async (req, res) => {}) // redirect to google oauth consent screen
+authRouter.get("/google/callback", async (req, res) => {}) // handle google oauth callback
+
+// GitHub OAuth
+authRouter.get("/github", async (req, res) => {}) // redirect to github oauth consent screen
+authRouter.get("/github/callback", async (req, res) => {}) // handle github oauth callback
+
+// Facebook OAuth
+authRouter.get("/facebook", async (req, res) => {}) // redirect to facebook oauth consent screen
+authRouter.get("/facebook/callback", async (req, res) => {}) // handle facebook oauth callback
+
+export default authRouter;
+```
