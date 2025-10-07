@@ -765,3 +765,187 @@ authRouter.get("/facebook/callback", async (req, res) => {}) // handle facebook 
 
 export default authRouter;
 ```
+### Step 13 Config middleware-passport for handle oauth
+#### step 13.1 .env prepare inadvance
+```js
+
+NODE_ENV = "development"
+
+# PORT used by the backend Express server
+PORT=8887
+
+DATABASE_URL="mysql://root:pooSQL123@localhost:3306/db_login_with_social_01"
+
+CLIENT_URL="http://localhost:5173"
+
+ACCESS_TOKEN_SECRET="myaccesstokensecret12345"
+ACCESS_TOKEN_EXPIRY="15m"
+
+REFRESH_TOKEN_SECRET="myrefreshtokensecret12345"
+REFRESH_TOKEN_EXPIRY="7d"
+
+GOOGLE_CLIENT_ID="51736579310-3u5u6u7b8u9u0u1u2u3u4u5u6u7u8u9u0.apps.googleusercontent.com" <-- prepare, but key is option
+GOOGLE_CLIENT_SECRET="GOCSPX-abcdefghijklmnoqrstuvwxyz123456" <-- prepare, but key is option
+
+GITHUB_CLIENT_ID="Iv1.abcdefghijklmno" <-- prepare, but key is option
+GITHUB_CLIENT_SECRET="abcdefghijklmnoqrstuvwxyz123456" <-- prepare, but key is option
+
+FACEBOOK_CLIENT_ID="123456789012345" <-- prepare, but key is option
+FACEBOOK_CLIENT_SECRET="abcdefghijklmnoqrstuvwxyz123456" <-- prepare, but key is option
+```
+#### step 13.2 src/config/passport.config.js
+```js
+import passport from "passport";
+import { Strategy as GoogleStrategy } from "passport-google-oauth20";
+import { Strategy as GitHubStrategy } from "passport-github2";
+import { Strategy as FacebookStrategy } from "passport-facebook";
+
+const initializePassport = () => {
+  passport.use(
+    new GoogleStrategy(
+      {
+        clientID: process.env.GOOGLE_CLIENT_ID,
+        clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+        callbackURL: `${process.env.SERVER_URL}/api/v1/auth/google/callback`,
+      },
+      (accessToken, refreshToken, profile, done) => {
+        // This function is called after successful authentication with Google
+        // You can use the profile information to find or create a user in your database
+        return done(null, profile); // Pass the profile to the next middleware, null indicates no error
+      }
+    )
+  );
+
+  passport.use(
+    new GitHubStrategy(
+      {
+        clientID: process.env.GITHUB_CLIENT_ID,
+        clientSecret: process.env.GITHUB_CLIENT_SECRET,
+        callbackURL: `${process.env.SERVER_URL}/api/v1/auth/github/callback`,
+      },
+      (accessToken, refreshToken, profile, done) => {
+        return done(null, profile);
+      }
+    )
+  );
+
+  passport.use(
+    new FacebookStrategy(
+      {
+        clientID: process.env.FACEBOOK_CLIENT_ID,
+        clientSecret: process.env.FACEBOOK_CLIENT_SECRET,
+        callbackURL: `${process.env.SERVER_URL}/api/v1/auth/facebook/callback`,
+        profileFields: ["id", "displayName", "emails", "photos"], // Request email and name fields from Facebook
+      },
+      (accessToken, refreshToken, profile, done) => {
+        return done(null, profile);
+      }
+    )
+  );
+};
+
+export default initializePassport;
+```
+#### step 13.3 app.js update // middleware
+```js
+import express from 'express';
+import cors from 'cors';
+import helmet from 'helmet';
+import cookieParser from 'cookie-parser';
+import errorMiddleware from './middlewares/error.middleware.js';
+import mainRouter from './routers/main.routes.js';
+import initializePassport from './config/passport.config.js';
+import passport from 'passport';
+
+
+const app = express();
+
+app.use(helmet());
+app.use(cors({
+  origin: process.env.CLIENT_URL,
+  credentials: true,
+})); // Enable CORS for the client URL
+
+app.use(express.json()); // Prase JSON body, req.body
+
+app.use(cookieParser()); // Parse Cookie header and populate req.cookies, req.cookies
+
+// set passport initialize
+initializePassport(); <--- 1st input initializePassport to import initializePassport from './config/passport.config.js'
+app.use(passport.initialize()); <--- 2nd input app.use(passport) to import passport from 'passport', then . initiallize
+
+// API routes
+app.use("/api/v1", mainRouter);
+
+// not found route
+// Handle 404 errors for undefined routes
+app.use((req, res) => {
+  res.status(404).json({ message: `path not found ${req.method} ${req.url}` }); 
+});
+
+// Error handling middleware
+app.use(errorMiddleware);
+
+export default app;
+```
+#### step 13.4 src/routers/auth.routes.js --> update at all oauth path
+```js
+import { Router } from "express";
+import loginController from "../controllers/auth/login.controller.js";
+import registerController from "../controllers/auth/register.controller.js";
+import refreshTokenController from "../controllers/auth/refreshToken.controller.js";
+import logoutController from "../controllers/auth/logout.controller.js";
+import passport from "passport";
+
+const authRouter = Router();
+
+authRouter.post("/register", registerController);
+authRouter.post("/login", loginController); // generate access token and refresh token
+authRouter.post("/refresh-token", refreshTokenController); // generate new access token using refresh token
+authRouter.post("/logout", logoutController); // logout user and revoke refresh token
+
+// Google OAuth
+authRouter.get(
+  "/google",
+  passport.authenticate("google", { scope: ["profile", "email"] })
+); // redirect to google oauth consent screen, revice token from google
+authRouter.get(
+  "/google/callback",
+  passport.authenticate("google", {
+    // handle google oauth callback
+    session: false,
+    failureRedirect: `${process.env.CLIENT_URL}/login`, // redirect to login page if authentication fails
+  }),
+  (req, res) => {} // get req.user and send to controller for further processing
+);
+
+// GitHub OAuth
+authRouter.get(
+  "/github",
+  passport.authenticate("github", { scope: ["user: email"] })
+); // redirect to github oauth consent screen
+authRouter.get(
+  "/github/callback",
+  passport.authenticate("github", {
+    session: false,
+    failureRedirect: `${process.env.CLIENT_URL}/login`, // redirect to login page if authentication fails
+  }),
+  (req, res) => {} // get req.user and send to controller for further processing
+);
+
+// Facebook OAuth
+authRouter.get(
+  "/facebook",
+  passport.authenticate("facebook", { scope: ["email"] })
+); // redirect to facebook oauth consent screen
+authRouter.get(
+  "/facebook/callback",
+  passport.authenticate("facebook", {
+    session: false,
+    failureRedirect: `${process.env.CLIENT_URL}/login`, // redirect to login page if authentication fails
+  }),
+  (req, res) => {} // get req.user and send to controller for further processing
+); 
+
+export default authRouter;
+```

@@ -4,6 +4,9 @@ import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
 import errorMiddleware from './middlewares/error.middleware.js';
 import mainRouter from './routers/main.routes.js';
+import initializePassport from './config/passport.config.js';
+import passport from 'passport';
+
 
 const app = express();
 
@@ -16,6 +19,10 @@ app.use(cors({
 app.use(express.json()); // Prase JSON body, req.body
 
 app.use(cookieParser()); // Parse Cookie header and populate req.cookies, req.cookies
+
+// set passport initialize
+initializePassport();
+app.use(passport.initialize());
 
 // API routes
 app.use("/api/v1", mainRouter);
