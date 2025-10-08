@@ -949,3 +949,278 @@ authRouter.get(
 
 export default authRouter;
 ```
+### Step 14 Controller login social create (loginSocial.controller.js)
+#### step 14.1 src/config/passport.config.js to able to normalize object "profile" from social provider, and res.user to controller
+```js
+import passport from "passport";
+import { Strategy as GoogleStrategy } from "passport-google-oauth20";
+import { Strategy as GitHubStrategy } from "passport-github2";
+import { Strategy as FacebookStrategy } from "passport-facebook";
+
+// map the profile object received from passport strategy to a common format
+const socialLoginVerify = (accessToken, refreshToken, profile, done) => {
+  const normalizedProfile = {
+    provider: profile.provider, // "google", "github", "facebook"
+    providerId: profile.providerId, // unique id (number) from the provider
+    email: null, // initialize email as null
+    name: null, // initialize name as null
+    coverImg: null, // initialize coverImg as null
+  };
+
+  console.log("profile", profile) // to monitor key: profile recived from provide
+
+  // extract email and name based on provider, by switch case
+  switch (profile.provider) {
+    case "google":
+      normalizedProfile.email = profile.emails?.[0]?.value || null; // get the first email if exists
+      normalizedProfile.name = profile.displayName || null;
+      normalizedProfile.coverImg = profile.photos?.[0]?.value || null; // get the first photo if exists
+      break;
+
+    case "facebook":
+      normalizedProfile.email = profile.emails?.[0]?.value || null; // get the first email if exists
+      normalizedProfile.name = profile.displayName || null;
+      normalizedProfile.coverImg = profile.photos?.[0]?.value || null; // get the first photo if exists
+      break;
+
+    case "github":
+      normalizedProfile.email = profile.emails?.[0]?.value || null; // get the first email if exists
+      normalizedProfile.name = profile.displayName ?? profile.username; // use displayName if exists, otherwise use username
+      normalizedProfile.coverImg = profile._json?.avatat_url; // get the first photo if exists
+      break;
+  }
+
+  return done(null, normalizedProfile); // null indicates no error, pass the normalized profile to the next middleware or controller as req.user
+};
+
+const initializePassport = () => {
+  passport.use(
+    new GoogleStrategy(
+      {
+        clientID: process.env.GOOGLE_CLIENT_ID,
+        clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+        callbackURL: `${process.env.SERVER_URL}/api/v1/auth/google/callback`,
+      },
+      (accessToken, refreshToken, profile, done) => {
+        // This function is called after successful authentication with Google
+        // You can use the profile information to find or create a user in your database
+        return done(null, profile); // Pass the profile to the next middleware, null indicates no error
+      },
+      socialLoginVerify
+    )
+  );
+
+  passport.use(
+    new GitHubStrategy(
+      {
+        clientID: process.env.GITHUB_CLIENT_ID,
+        clientSecret: process.env.GITHUB_CLIENT_SECRET,
+        callbackURL: `${process.env.SERVER_URL}/api/v1/auth/github/callback`,
+      },
+      socialLoginVerify
+    )
+  );
+
+  passport.use(
+    new FacebookStrategy(
+      {
+        clientID: process.env.FACEBOOK_CLIENT_ID,
+        clientSecret: process.env.FACEBOOK_CLIENT_SECRET,
+        callbackURL: `${process.env.SERVER_URL}/api/v1/auth/facebook/callback`,
+        profileFields: ["id", "displayName", "emails", "photos"], // Request email and name fields from Facebook
+      },
+      socialLoginVerify
+    )
+  );
+};
+
+export default initializePassport;
+```
+#### step 14.2 src/controller/auth/loginSocial.controller.js --> create
+```js
+import createError from "../../utils/createError.js";
+import jwt from "jsonwebtoken";
+import { v4 as uuidv4 } from "uuid";
+import prisma from "../../config/prisma.config.js";
+import { preprocess } from "zod";
+
+// this controller will handle the user profile received from passport after successful social login
+// and plan to use as common controller for all social login (google, github, facebook)
+// therefore, the passport middleware must respond with req.user containing the user profile as common format, see config/passport.config.js
+export default async function (req, res) {
+  const userProfile = req.user;
+
+  // step 1: validate the user profile received from passport
+  if (!userProfile) {
+    throw createError(400, "User profile not found afrer social login");
+  }
+
+  if (!userProfile.email) {
+    return res.redirect(
+      `${process.env.CLIENT_URL}/login/error?message=Email not found from ${userProfile.provider}`
+    );
+  }
+  // step 2: check if user with the email already exists in the database
+  // there are 3 cases:
+  // case 1: account with the email already exists with the same provider (e.g., google)
+  // case 2: account not exists, but user is existing with different provider (e.g., github, facebook) --> we will create new account with the new provider and link to the existing user
+  // case 3: account not exists, and user not exists --> we will create new user and new account
+  const user = await prisma.$transaction(async (tx) => {
+    // use transaction to ensure all operations are atomic (all succeed or all fail)
+    // find account with the email and provider
+    let account = await tx.account.findUnique({
+      where: {
+        provider_providerId: {
+          provider: userProfile.provider, // e.g., "google"
+          providerId: userProfile.providerId, // e.g., "1234567890"
+        },
+      },
+      include: { user: { omit: { password: true } } }, // include the related user data in the result
+    });
+    // case 1: account with the email and provider already exists
+    if (account) {
+      return account.user; // return the existing user, return case 1 of step 2
+    }
+
+    // case 2: account not exists, but user is existing with different provider
+    let existUser = await tx.user.findUnique({
+      where: { email: userProfile.email },
+      omit: { password: true }, // exclude password field from the result
+    });
+    if (existUser) {
+      // create new account linked to the existing user
+      account = await tx.account.create({
+        data: {
+          userId: existUser.id,
+          type: "oauth",
+          provider: userProfile.provider,
+          providerId: userProfile.providerId,
+        },
+      });
+      return existUser; // return the existing user (we do not update the existing user profile to avoid overwriting existing data), return case 2 of step 2
+    }
+
+    // case 3: account not exists, and user not exists
+    // create new user and new account
+    const newUser = await tx.user.create({
+      data: {
+        email: userProfile.email,
+        name: userProfile.name,
+        coverImg: userProfile.coverImg,
+      },
+      omit: { password: true }, // exclude password field from the result
+    });
+
+    await tx.account.create({
+      data: {
+        userId: newUser.id,
+        type: "oauth",
+        provider: userProfile.provider,
+        providerId: userProfile.providerId,
+      },
+    });
+    return newUser; // return the newly created user of case 3 of step 2
+  }); // assign the result of the transaction to user and end of step 2
+
+  // step 3: generate access token and refresh token for the user (same as login controller)
+  const payload = { sub: user.id };
+  const accessToken = jwt.sign(payload, process.env.ACCESS_TOKEN_SECRET, {
+    expiresIn: process.env.ACCESS_TOKEN_EXPIRY,
+  });
+
+  const refreshTokenId = uuidv4(); // generate unique id for refresh token
+  const refreshToken = jwt.sign(
+    { jti: refreshTokenId },
+    process.env.REFRESH_TOKEN_SECRET,
+    {
+      expiresIn: process.env.REFRESH_TOKEN_EXPIRY,
+    }
+  );
+
+  // step 4: hash and store the refresh token id in the database
+  const hashedRefreshToken = await argon2.hash(refreshToken);
+  const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days and convert to milliseconds
+
+  await prisma.refreshToken.create({
+    data: {
+      id: refreshTokenId,
+      hashToken: hashedRefreshToken,
+      expiresAt: expiresAt,
+    }
+  })
+
+  // step 5: respond by setting the refresh token in httpOnly cookie and redirect to client with access token in query parameter
+  res.cookie("refreshToken", refreshToken, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production", // set secure flag in production, via HTTPS
+    sameSite: "strict", // protect CSRF
+    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days and convert to milliseconds
+  });
+
+  // redirect to frontend, path must defind
+  res.redirect(`${preprocess.env.CLIENT_URL}/oauth-callback?accessToken=${accessToken}`)
+
+} //end of controller
+```
+#### step 14.3 src/router/auth.routes.js --> update
+```js
+import { Router } from "express";
+import loginController from "../controllers/auth/login.controller.js";
+import registerController from "../controllers/auth/register.controller.js";
+import refreshTokenController from "../controllers/auth/refreshToken.controller.js";
+import logoutController from "../controllers/auth/logout.controller.js";
+import passport from "passport";
+import loginSocialController from "../controllers/auth/loginSocial.controller.js";
+
+const authRouter = Router();
+
+authRouter.post("/register", registerController);
+authRouter.post("/login", loginController); // generate access token and refresh token
+authRouter.post("/refresh-token", refreshTokenController); // generate new access token using refresh token
+authRouter.post("/logout", logoutController); // logout user and revoke refresh token
+
+// Google OAuth
+authRouter.get(
+  "/google",
+  passport.authenticate("google", { scope: ["profile", "email"] })
+); // redirect to google oauth consent screen, revice token from google
+authRouter.get(
+  "/google/callback",
+  passport.authenticate("google", {
+    // handle google oauth callback
+    session: false,
+    failureRedirect: `${process.env.CLIENT_URL}/login`, // redirect to login page if authentication fails
+  }), // obtain req.user
+  loginSocialController // call loginSocialController which will utilize of req.user <-- update
+);
+
+// GitHub OAuth
+authRouter.get(
+  "/github",
+  passport.authenticate("github", { scope: ["user: email"] })
+); // redirect to github oauth consent screen
+authRouter.get(
+  "/github/callback",
+  passport.authenticate("github", {
+    session: false,
+    failureRedirect: `${process.env.CLIENT_URL}/login`, // redirect to login page if authentication fails
+  }), // obtain req.user
+  loginSocialController // call loginSocialController which will utilize of req.user <-- update
+);
+
+// Facebook OAuth
+authRouter.get(
+  "/facebook",
+  passport.authenticate("facebook", { scope: ["email"] })
+); // redirect to facebook oauth consent screen
+authRouter.get(
+  "/facebook/callback",
+  passport.authenticate("facebook", {
+    session: false,
+    failureRedirect: `${process.env.CLIENT_URL}/login`, // redirect to login page if authentication fails
+  }), // obtain req.user
+  loginSocialController // call loginSocialController which will utilize of req.user <-- update
+);
+
+export default authRouter;
+```

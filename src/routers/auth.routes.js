@@ -4,6 +4,7 @@ import registerController from "../controllers/auth/register.controller.js";
 import refreshTokenController from "../controllers/auth/refreshToken.controller.js";
 import logoutController from "../controllers/auth/logout.controller.js";
 import passport from "passport";
+import loginSocialController from "../controllers/auth/loginSocial.controller.js";
 
 const authRouter = Router();
 
@@ -23,8 +24,8 @@ authRouter.get(
     // handle google oauth callback
     session: false,
     failureRedirect: `${process.env.CLIENT_URL}/login`, // redirect to login page if authentication fails
-  }),
-  (req, res) => {} // get req.user and send to controller for further processing
+  }), // obtain req.user
+  loginSocialController // call loginSocialController which will utilize of req.user
 );
 
 // GitHub OAuth
@@ -37,8 +38,8 @@ authRouter.get(
   passport.authenticate("github", {
     session: false,
     failureRedirect: `${process.env.CLIENT_URL}/login`, // redirect to login page if authentication fails
-  }),
-  (req, res) => {} // get req.user and send to controller for further processing
+  }), // obtain req.user
+  loginSocialController // call loginSocialController which will utilize of req.user
 );
 
 // Facebook OAuth
@@ -51,8 +52,8 @@ authRouter.get(
   passport.authenticate("facebook", {
     session: false,
     failureRedirect: `${process.env.CLIENT_URL}/login`, // redirect to login page if authentication fails
-  }),
-  (req, res) => {} // get req.user and send to controller for further processing
-); 
+  }), // obtain req.user
+  loginSocialController // call loginSocialController which will utilize of req.user
+);
 
 export default authRouter;
