@@ -1224,3 +1224,64 @@ authRouter.get(
 
 export default authRouter;
 ```
+### Step 15 Register application with Google, update .env and passport.config.js
+#### Step 15.1 Register application with Google
+```text
+step 1: at Google Cloud, https://console.cloud.google.com/...
+step 2: 
+  - select "New Project"
+  - Project name: ???(as desired) e.g. "test-login"
+  - Location: No organization
+  - push "Create" button
+ step 3:
+  - switch to selected project e.g. "test-login"
+  - select (or find) menu: "apis & services"
+  - At menu "Ennable APIs & service": select "Credentials"
+  - At menu "Credentaial": select "Configure consent screen"
+  - At menu "Google Auth Platform / Overview": select "Get started"
+  - 1. App information
+    -- App name: (as desired) e.g. "test-login"
+    -- User support email: e.g. "xxxxxxxx@mail.com"
+  - 2. Audience
+    -- Internal / External : Select "External"
+  - 3. Contact Information
+    -- email address: e.g. "xxxxxxxx@mail.com"
+  - 4. Finish
+    -- I agree to the "Google API Services: User Data Policy": Checked box to agree
+  - Push "Create" button
+step 4: at menu "Google Auth Platform / Overview"
+  - select menu "Create OAuth client"
+  step 5: at menu "Google Auth Platform / Overview / Create client"
+  - Application type: choose "Web application"
+  - Authorized JavaScript origins: blank
+  - Authorized redirect URIs: "http://localhost:8887/api/v1/auth/google/callback" *** same call back URL in .env and passport.config.js
+  - push "Create" button
+  - Google will return: *** 2 keys, must keep to use in .env
+    -- blow keys is for project name "test-login"
+    -- but actual use from project name "google-login2"
+step 6: Finished: at menu Google Auth Platform
+  - shows: OAuth 2.0 Client IDs (Name, Create date, type, ClinetID, ...)
+```
+#### step 15.2 update .env
+```text
+update id, secret and callback
+GOOGLE_CALLBACK_URL="http://localhost:8887/api/v1/auth/google/callback" // <-- must exactly same as desired in routes
+```
+#### step 15.3 update src/config/prisma.config.js
+```js
+  passport.use(
+    new GoogleStrategy(
+      {
+        clientID: process.env.GOOGLE_CLIENT_ID,
+        clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+        callbackURL: `${process.env.GOOGLE_CALLBACK_URL}`, // <--update following .env
+      },
+      (accessToken, refreshToken, profile, done) => {
+        // This function is called after successful authentication with Google
+        // You can use the profile information to find or create a user in your database
+        return done(null, profile); // Pass the profile to the next middleware, null indicates no error
+      },
+      socialLoginVerify
+    )
+  );
+```
