@@ -1257,8 +1257,6 @@ step 4: at menu "Google Auth Platform / Overview"
   - Authorized redirect URIs: "http://localhost:8887/api/v1/auth/google/callback" *** same call back URL in .env and passport.config.js
   - push "Create" button
   - Google will return: *** 2 keys, must keep to use in .env
-    -- blow keys is for project name "test-login"
-    -- but actual use from project name "google-login2"
 step 6: Finished: at menu Google Auth Platform
   - shows: OAuth 2.0 Client IDs (Name, Create date, type, ClinetID, ...)
 ```
