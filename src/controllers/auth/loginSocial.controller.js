@@ -118,16 +118,37 @@ export default async function (req, res) {
       id: refreshTokenId,
       hashToken: hashedRefreshToken,
       expiresAt: expiresAt,
+      userId: user.id,
     }
   })
 
+    // 🔍 DEBUG: Log cookie details before setting
+  // console.log("=== COOKIE DEBUG START ===");
+  // console.log("Provider:", userProfile.provider);
+  // console.log("Refresh Token (first 20 chars):", refreshToken.substring(0, 20));
+  // console.log("NODE_ENV:", process.env.NODE_ENV);
+  // console.log("Secure flag:", process.env.NODE_ENV === "production");
+  // console.log("Request headers:", req.headers);
+  // console.log("Request protocol:", req.protocol);
+  // console.log("Request hostname:", req.hostname);
+  // console.log("=== COOKIE DEBUG END ===");
+
   // step 5: respond by setting the refresh token in httpOnly cookie and redirect to client with access token in query parameter
-  res.cookie("refreshToken", refreshToken, {
+
+  const cookieOptions = {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production", // set secure flag in production, via HTTPS
-    sameSite: "strict", // protect CSRF
-    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days and convert to milliseconds
-  });
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "strict", // ← CHANGE THIS FROM "strict"
+    maxAge: 7 * 24 * 60 * 60 * 1000,
+    path: "/", // make cookie available in all routes
+  };
+
+  console.log("Cookie options:", cookieOptions);
+
+  res.cookie("refreshToken", refreshToken, cookieOptions);
+
+    // 🔍 DEBUG: Verify cookie was set in response headers
+  console.log("Response headers after cookie set:", res.getHeaders());
 
   // redirect to frontend, path must defind
   // res.redirect(`${process.env.CLIENT_URL}/oauth-callback?accessToken=${accessToken}`)
@@ -141,7 +162,13 @@ export default async function (req, res) {
       provider: userProfile.provider,
       accessToken: accessToken,
       userId: user.id,
-      note: "Refresh Token is in HttpOnly Cookie"
+      note: "Refresh Token is in HttpOnly Cookie",
+            // 🔧 DEBUG INFO (remove in production)
+      // debug: {
+      //   cookieSet: true,
+      //   cookieName: "refreshToken",
+      //   cookieOptions: cookieOptions,
+      // },
     }
   });
 
