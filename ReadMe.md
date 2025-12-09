@@ -45,14 +45,16 @@ git push -u origin main
 ```
 ### Step 6 set up database
 #### step 6.1 customize schema.prisma to provider = "mysql"
-``` schema
+``` prisma
 datasource db {
   provider = "mysql"
-  url      = env("DATABASE_URL")
+  // move the database url to environment variables for security reason
+  // and set the DATABASE_URL in .env file then use at prisma.config.js
+  // url      = env("DATABASE_URL")
 }
 ```
 #### step 6.2 create schema.prisma model
-``` schema
+``` prisma
 generator client {
   provider = "prisma-client-js"
   output   = "../src/generated/prisma"
@@ -60,7 +62,7 @@ generator client {
 
 datasource db {
   provider = "mysql"
-  url      = env("DATABASE_URL")
+  
 }
 
 model User {
@@ -109,7 +111,7 @@ model Account {
 ```
 #### step 6.3 customize .env to use mysql local
 ```env
-DATABASE_URL="mysql://root:pooSQL123@localhost:3306/db_login_with_social"
+DATABASE_URL="mysql://root:pooSQL123@localhost:3306/db_login_with_social_01"
 ```
 #### step 6.4 immigate to database
 ```bash
@@ -119,11 +121,17 @@ schema model DB and folder src/generated was created
 #### step 6.5 customize file src/config/prisma.config.js
 to export prisma instance with looging enable
 ```js
-// src/config/prisma.config.js
-import { PrismaClient } from "..generated/prisma/client.js";
+import { PrismaClient } from "../generated/prisma/client.js"
+
+// import DATABASE_URL from environment variables (.env)
+const DATABASE_URL = process.env.DATABASE_URL
 
 // Create a new instance of the Prisma Client with logging enabled
 const prisma = new PrismaClient({
+
+  // add the datasource url from environment variables
+  // as recommneded from prisma alarm to move datasource url from schema.prisma to environment (.env) variables for security reason
+  datasourceUrl: DATABASE_URL,
   log: ["query", "info", "warn", "error"],
 });
 
@@ -161,7 +169,7 @@ const errorMiddleware = (err, req, res, next) => {
     error.errors = validateErrors;
   }
 
-  res.status(...error, err.statusCode || 500).json({ message: err.message || 'Somthing went wrong' });
+  res.status(err.statusCode || 500).json({...error, message: err.message || 'Somthing went wrong' });
 }
 
 export default errorMiddleware;
@@ -193,13 +201,37 @@ app.use(cookieParser()); // Parse Cookie header and populate req.cookies, req.co
 
 export default app;
 ```
-#### step 7.4 src/app.js import src/middlewares/error.middleware.js and use at end of file app.js
+#### step 7.4 make src/middlewares/error.middleware.js and import then use at end of file app.js
+1) src/middlewares/error.middleware.js, create file
+```js
+import { ZodError } from "zod";
+
+const errorMiddleware = (err, req, res, next) => {
+  let error = err;
+
+  if(error instanceof ZodError) {
+    const validateErrors = error.errors.reduce((acc, cur) => (
+      {
+        ...acc,
+        [cur.path[0]]: cur.message
+      }
+    ), {});
+
+    error.errors = validateErrors;
+  }
+
+  res.status(err.statusCode || 500).json({...error, message: err.message || 'Somthing went wrong' });
+}
+
+export default errorMiddleware;
+```
+2) src/app.js, import and use
 ```js
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
-import errorMiddleware from './middlewares/error.middleware.js'; <-- make sure there .js (dot js)
+import errorMiddleware from './middlewares/error.middleware.js'; // <-- make sure there .js (dot js)
 
 const app = express();
 
@@ -218,7 +250,7 @@ app.use(cookieParser()); // Parse Cookie header and populate req.cookies, req.co
 // not found route
 
 // Error handling middleware
-app.use(errorMiddleware); <-- call errorMiddleware
+app.use(errorMiddleware); // <-- call errorMiddleware
 
 export default app;
 ```
@@ -232,6 +264,8 @@ app.use((req, res) => {
 ```
 #### step 7.6 src/server.js add for running server
 ```js
+import dotenv from 'dotenv';
+dotenv.config();
 import app from './app.js';
 
 const PORT = process.env.PORT || 8887;
@@ -347,7 +381,7 @@ export default app;
 #### step 9.1 src/utils/createError.js
 ```js
 export default function createError(statusCode, msg, errors) {
-  const err = new Error(message);
+  const err = new Error(msg);
   err.statusCode = statusCode;
   err.errors = errors || null;
   err.success = false;
@@ -361,7 +395,7 @@ import argon2 from "argon2";
 import { prisma } from "../../config/prisma.config.js";
 import createError from "../../utils/createError.js";
 
-export default async function registerController(req, res) {
+export default async function (req, res) {
   // step 1: get user data from req.body
   const { email, name, password, coverImg } = req.body;
 
@@ -450,61 +484,72 @@ import argon2 from "argon2";
 import { v4 as uuidv4 } from "uuid";
 
 // Login Controller
-export default async function (req, res){
-// step 1: get user data from req.body
+export default async function (req, res) {
+  // step 1: get user data from req.body
   const { email, password } = req.body;
-  
-// step 2: validate user data (e.g., check if email and password are provided)
-// validation will be done via zod schema in the route middleware
 
-// step 3: check if email & passwaord are correct
-  const user = await prisma.user.findUnique({where: { email }, omit: { password: true, createdAt: true, updatedAt: true }
-  });
+  // step 2: validate user data (e.g., check if email and password are provided)
+  // validation will be done via zod schema in the route middleware
 
-  if(!user){
+  // step 3: check if email & passwaord are correct
+  const user = await prisma.user.findUnique({
+    where: { email },
+    omit: { coverImg: true, createdAt: true, updatedAt: true },
+  }); // exclude coverImg, createdAt, updatedAt fields from the result
+
+  if (!user) {
     // if user not found, throw error
-    throw createError(400, "Invalid email or password");
+    throw createError(400, "Invalid email or password !");
   }
 
   const isMatchPassword = await argon2.verify(user.password, password);
-  if(!isMatchPassword){
+  if (!isMatchPassword) {
     // if password does not match, throw error
-    throw createError(400, "Invalid email or password");
+    throw createError(400, "Invalid email or password !!");
   }
 
-// step 4: generate access token and refresh token
+  // step 4: generate access token and refresh token
   const payload = { sub: user.id };
-  const accessToken = jwt.sign(payload, process.env.ACCESS_TOKEN_SECRET, { expiresIn: ACCESS_TOKEN_EXPIRY });
+  const accessToken = jwt.sign(payload, process.env.ACCESS_TOKEN_SECRET, {
+    expiresIn: process.env.ACCESS_TOKEN_EXPIRY,
+  });
 
-  const refreshTokenId = uuidv4(); // generate unique id for refresh token 
-  const refreshToken = jwt.sign({ jti:refreshTokenId }, process.env.REFRESH_TOKEN_SECRET, { expiresIn: REFRESH_TOKEN_EXPIRY });
+  const refreshTokenId = uuidv4(); // generate unique id for refresh token
+  const refreshToken = jwt.sign(
+    { jti: refreshTokenId },
+    process.env.REFRESH_TOKEN_SECRET,
+    { expiresIn: process.env.REFRESH_TOKEN_EXPIRY }
+  );
 
-// step 5: hash the refresh token id and store it in the database
-  const hashedTokenId = await argon2.hash(refreshTokenId);
-  const expiresAt = new Date(Date.now() + 7*24*60*60*1000); // 7 days and convert to milliseconds 
+  // step 5: hash the refresh token id and store it in the database
+  const hashedRefreshToken = await argon2.hash(refreshToken);
+  const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days and convert to milliseconds
 
   await prisma.refreshToken.create({
     data: {
       id: refreshTokenId,
-      hashToken: hashedTokenId,
-      expiresAt: expiresAt
-    }})
+      hashToken: hashedRefreshToken,
+      expiresAt: expiresAt,
+    },
+  });
 
-// step 5: send tokens to client in httpOnly cookie
-    res.cookie("refreshToken", refreshToken, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production", // set secure flag in production, via HTTPS
-      sameSite: "strict", // protect CSRF
-      maxAge: 7*24*60*60*1000 // 7 days and convert to milliseconds 
-    });
+  // step 5: send tokens to client in httpOnly cookie
+  res.cookie("refreshToken", refreshToken, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production", // set secure flag in production, via HTTPS
+    sameSite: "strict", // protect CSRF
+    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days and convert to milliseconds
+  });
 
-
-// step 6: respond with success message or user data to the client
-    res.status(200).json({
-      data: { accessToken, user },
-      message: "Login successful",
-      success: true,})
+  // step 6: respond with success message or user data to the client
+  const { password: _, ...userWithoutPassword } = user; // exclude password field from user object
+  res.status(200).json({
+    data: { accessToken,  user: userWithoutPassword },
+    message: "Login successful",
+    success: true,
+  });
 }
+
 ```
 #### step 10.3 src/routers/auth.routes.js update
 ```js
@@ -557,7 +602,7 @@ export default async function (req, res) {
       process.env.REFRESH_TOKEN_SECRET
     );
   } catch (error) {
-    throw createError(401, "Invalid or expired refresh token");
+    throw createError(403, "Invalid or expired refresh token");
   }
 
   const { jti: refreshTokenId } = payloadRefreshToken; // get the jti (unique id) from the payload
@@ -568,7 +613,7 @@ export default async function (req, res) {
   });
 
   if (!findRefreshToken) {
-    throw createError(401, "session not found or already invalidated");
+    throw createError(403, "Token not found. Please login again");
   }
 
   if (findRefreshToken.revoked) {
@@ -581,11 +626,11 @@ export default async function (req, res) {
     );
   }
 
-  constiisMatchRefreshToken = await argon2.verify(
+  const isMatchRefreshToken = await argon2.verify(
     findRefreshToken.hashToken,
     refreshToken
   );
-  if (!iisMatchRefreshToken) {
+  if (!isMatchRefreshToken) {
     throw createError(403, "Invalid refresh token");
   }
 
@@ -608,21 +653,22 @@ export default async function (req, res) {
 
   // step 5: update the database (revoked --> true old one) and hash the new refresh token id and store it in the database
   // use transaction to ensure both operations succeed or fail together
-  await prisma.$transaction(async (tx) => {
+  await prisma.$transaction( async (tx) => {
+    // update old revoked to true
     await tx.refreshToken.updateMany({
-      where: { userId: refreshTokenId },
+      where: {userId: findRefreshToken.userId, revoked: false },
       data: { revoked: true },
-    }); // mark old refresh token as revoked
+    });
+    // create new refresh token record
+    await tx.refreshToken.create({
+      data: {
+        id: newRefreshTokenId,
+        userId: findRefreshToken.userId,
+        hashToken: hashedNewRefreshToken,
+        expiresAt: expiresAt,
+      }
+    })
   })
-
-  await tx.refreshToken.create({
-    data: {
-      id: newRefreshTokenId,
-      userId: findRefreshToken.userId,
-      hashToken: hashedNewRefreshToken,
-      expiresAt: expiresAt,                                     
-    },
-  });
 
   // step 6: send new refresh token to client in httpOnly cookie
   res.cookie("refreshToken", newRefreshToken, {
@@ -638,6 +684,7 @@ export default async function (req, res) {
     success: true,
   });
 }
+
 ```
 #### step 11.2 src/routers/auth.routes.js update
 ```js
@@ -800,19 +847,57 @@ import { Strategy as GoogleStrategy } from "passport-google-oauth20";
 import { Strategy as GitHubStrategy } from "passport-github2";
 import { Strategy as FacebookStrategy } from "passport-facebook";
 
+// map the profile object received from passport strategy to a common format
+const socialLoginVerify = (accessToken, refreshToken, profile, done) => {
+  const normalizedProfile = {
+    provider: profile.provider, // "google", "github", "facebook"
+    providerId: profile.id, // unique id (number) from the provider
+    email: null, // initialize email as null
+    name: null, // initialize name as null
+    coverImg: null, // initialize coverImg as null
+  };
+
+  console.log("profile from passport.config.js", profile) // to monitor key: profile recived from provide
+
+  // extract email and name based on provider, by switch case
+  switch (profile.provider) {
+    case "google":
+      normalizedProfile.email = profile.emails?.[0]?.value || null; // get the first email if exists
+      normalizedProfile.name = profile.displayName || null;
+      normalizedProfile.coverImg = profile.photos?.[0]?.value || null; // get the first photo if exists
+      break;
+
+    case "facebook":
+      normalizedProfile.email = profile.emails?.[0]?.value || null; // get the first email if exists
+      normalizedProfile.name = profile.displayName || null;
+      normalizedProfile.coverImg = profile.photos?.[0]?.value || null; // get the first photo if exists
+      break;
+
+    case "github":
+      normalizedProfile.email = profile.emails?.[0]?.value || null; // get the first email if exists
+      normalizedProfile.name = profile.displayName ?? profile.username; // use displayName if exists, otherwise use username
+      // normalizedProfile.coverImg = profile._json?.avatat_url; // get the first photo if exists
+      normalizedProfile.coverImg = profile.photos?.[0]?.value || null; // get the first photo if exists
+      break;
+  }
+
+  return done(null, normalizedProfile); // null indicates no error, pass the normalized profile to the next middleware or controller as req.user
+};
+
 const initializePassport = () => {
   passport.use(
     new GoogleStrategy(
       {
         clientID: process.env.GOOGLE_CLIENT_ID,
         clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-        callbackURL: `${process.env.SERVER_URL}/api/v1/auth/google/callback`,
+        callbackURL: `${process.env.GOOGLE_CALLBACK_URL}`,
       },
-      (accessToken, refreshToken, profile, done) => {
-        // This function is called after successful authentication with Google
-        // You can use the profile information to find or create a user in your database
-        return done(null, profile); // Pass the profile to the next middleware, null indicates no error
-      }
+      // the original function signature is (accessToken, refreshToken, profile, done), as defined in passport documentation
+      // then make common function to handle params "profile" received from different providers
+      // orignal function is (accessToken, refreshToken, profile, done) => {
+      //  return done(null, profile); return key "profile" and pass to common function socialLoginVerify
+      // }
+      socialLoginVerify // is the common function to handle profile from different providers, 
     )
   );
 
@@ -821,11 +906,9 @@ const initializePassport = () => {
       {
         clientID: process.env.GITHUB_CLIENT_ID,
         clientSecret: process.env.GITHUB_CLIENT_SECRET,
-        callbackURL: `${process.env.SERVER_URL}/api/v1/auth/github/callback`,
+        callbackURL: `${process.env.GITHUB_CALLBACK_URL}`,
       },
-      (accessToken, refreshToken, profile, done) => {
-        return done(null, profile);
-      }
+      socialLoginVerify
     )
   );
 
@@ -834,17 +917,18 @@ const initializePassport = () => {
       {
         clientID: process.env.FACEBOOK_CLIENT_ID,
         clientSecret: process.env.FACEBOOK_CLIENT_SECRET,
-        callbackURL: `${process.env.SERVER_URL}/api/v1/auth/facebook/callback`,
+        callbackURL: `${process.env.FACEBOOK_CALLBACK_URL}`,
         profileFields: ["id", "displayName", "emails", "photos"], // Request email and name fields from Facebook
+        // 💡 เพิ่ม graphAPIVersion เพื่อแก้ปัญหาเวอร์ชันเก่า
+        graphAPIVersion: 'v19.0', // หรือเวอร์ชันล่าสุดที่รองรับ
       },
-      (accessToken, refreshToken, profile, done) => {
-        return done(null, profile);
-      }
+      socialLoginVerify
     )
   );
 };
 
 export default initializePassport;
+
 ```
 #### step 13.3 app.js update // middleware
 ```js
@@ -922,7 +1006,7 @@ authRouter.get(
 // GitHub OAuth
 authRouter.get(
   "/github",
-  passport.authenticate("github", { scope: ["user: email"] })
+  passport.authenticate("github", { scope: ["user:email"] })
 ); // redirect to github oauth consent screen
 authRouter.get(
   "/github/callback",
@@ -961,13 +1045,13 @@ import { Strategy as FacebookStrategy } from "passport-facebook";
 const socialLoginVerify = (accessToken, refreshToken, profile, done) => {
   const normalizedProfile = {
     provider: profile.provider, // "google", "github", "facebook"
-    providerId: profile.providerId, // unique id (number) from the provider
+    providerId: profile.id, // unique id (number) from the provider
     email: null, // initialize email as null
     name: null, // initialize name as null
     coverImg: null, // initialize coverImg as null
   };
 
-  console.log("profile", profile) // to monitor key: profile recived from provide
+  console.log("profile from passport.config.js", profile) // to monitor key: profile recived from provide
 
   // extract email and name based on provider, by switch case
   switch (profile.provider) {
@@ -986,7 +1070,8 @@ const socialLoginVerify = (accessToken, refreshToken, profile, done) => {
     case "github":
       normalizedProfile.email = profile.emails?.[0]?.value || null; // get the first email if exists
       normalizedProfile.name = profile.displayName ?? profile.username; // use displayName if exists, otherwise use username
-      normalizedProfile.coverImg = profile._json?.avatat_url; // get the first photo if exists
+      // normalizedProfile.coverImg = profile._json?.avatat_url; // get the first photo if exists
+      normalizedProfile.coverImg = profile.photos?.[0]?.value || null; // get the first photo if exists
       break;
   }
 
@@ -999,14 +1084,14 @@ const initializePassport = () => {
       {
         clientID: process.env.GOOGLE_CLIENT_ID,
         clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-        callbackURL: `${process.env.SERVER_URL}/api/v1/auth/google/callback`,
+        callbackURL: `${process.env.GOOGLE_CALLBACK_URL}`,
       },
-      (accessToken, refreshToken, profile, done) => {
-        // This function is called after successful authentication with Google
-        // You can use the profile information to find or create a user in your database
-        return done(null, profile); // Pass the profile to the next middleware, null indicates no error
-      },
-      socialLoginVerify
+      // the original function signature is (accessToken, refreshToken, profile, done), as defined in passport documentation
+      // then make common function to handle params "profile" received from different providers
+      // orignal function is (accessToken, refreshToken, profile, done) => {
+      //  return done(null, profile); return key "profile" and pass to common function socialLoginVerify
+      // }
+      socialLoginVerify // is the common function to handle profile from different providers, 
     )
   );
 
@@ -1015,7 +1100,7 @@ const initializePassport = () => {
       {
         clientID: process.env.GITHUB_CLIENT_ID,
         clientSecret: process.env.GITHUB_CLIENT_SECRET,
-        callbackURL: `${process.env.SERVER_URL}/api/v1/auth/github/callback`,
+        callbackURL: `${process.env.GITHUB_CALLBACK_URL}`,
       },
       socialLoginVerify
     )
@@ -1026,8 +1111,10 @@ const initializePassport = () => {
       {
         clientID: process.env.FACEBOOK_CLIENT_ID,
         clientSecret: process.env.FACEBOOK_CLIENT_SECRET,
-        callbackURL: `${process.env.SERVER_URL}/api/v1/auth/facebook/callback`,
+        callbackURL: `${process.env.FACEBOOK_CALLBACK_URL}`,
         profileFields: ["id", "displayName", "emails", "photos"], // Request email and name fields from Facebook
+        // 💡 เพิ่ม graphAPIVersion เพื่อแก้ปัญหาเวอร์ชันเก่า
+        graphAPIVersion: 'v19.0', // หรือเวอร์ชันล่าสุดที่รองรับ
       },
       socialLoginVerify
     )
@@ -1035,6 +1122,7 @@ const initializePassport = () => {
 };
 
 export default initializePassport;
+
 ```
 #### step 14.2 src/controller/auth/loginSocial.controller.js --> create
 ```js
@@ -1043,16 +1131,18 @@ import jwt from "jsonwebtoken";
 import { v4 as uuidv4 } from "uuid";
 import prisma from "../../config/prisma.config.js";
 import { preprocess } from "zod";
+import argon2 from "argon2";
 
 // this controller will handle the user profile received from passport after successful social login
 // and plan to use as common controller for all social login (google, github, facebook)
 // therefore, the passport middleware must respond with req.user containing the user profile as common format, see config/passport.config.js
 export default async function (req, res) {
   const userProfile = req.user;
+  console.log("userProfile from social login:", userProfile);
 
   // step 1: validate the user profile received from passport
   if (!userProfile) {
-    throw createError(400, "User profile not found afrer social login");
+    throw createError(401, "User profile not found after social login");
   }
 
   if (!userProfile.email) {
@@ -1070,9 +1160,9 @@ export default async function (req, res) {
     // find account with the email and provider
     let account = await tx.account.findUnique({
       where: {
-        provider_providerId: {
+        provider_providerAccountId: { // use 2 keys (provider and providerAccountId) as composite unique key
           provider: userProfile.provider, // e.g., "google"
-          providerId: userProfile.providerId, // e.g., "1234567890"
+          providerAccountId: userProfile.providerId, // e.g., "1234567890"
         },
       },
       include: { user: { omit: { password: true } } }, // include the related user data in the result
@@ -1094,7 +1184,7 @@ export default async function (req, res) {
           userId: existUser.id,
           type: "oauth",
           provider: userProfile.provider,
-          providerId: userProfile.providerId,
+          providerAccountId: userProfile.providerId,
         },
       });
       return existUser; // return the existing user (we do not update the existing user profile to avoid overwriting existing data), return case 2 of step 2
@@ -1116,13 +1206,23 @@ export default async function (req, res) {
         userId: newUser.id,
         type: "oauth",
         provider: userProfile.provider,
-        providerId: userProfile.providerId,
+        providerAccountId: userProfile.providerId,
       },
     });
     return newUser; // return the newly created user of case 3 of step 2
   }); // assign the result of the transaction to user and end of step 2
 
+    // 🔍 เพิ่ม Log ตรงนี้เพื่อตรวจสอบค่า user
+  console.log("Debug: User object from transaction:", user);
+
+  if (!user || !user.id) {
+      console.error("Critical Error: User object is invalid after transaction!");
+      throw createError(500, "Failed to retrieve or create user.");
+  }
+
+
   // step 3: generate access token and refresh token for the user (same as login controller)
+  // object user was generated from transaction in step 2
   const payload = { sub: user.id };
   const accessToken = jwt.sign(payload, process.env.ACCESS_TOKEN_SECRET, {
     expiresIn: process.env.ACCESS_TOKEN_EXPIRY,
@@ -1158,9 +1258,23 @@ export default async function (req, res) {
   });
 
   // redirect to frontend, path must defind
-  res.redirect(`${preprocess.env.CLIENT_URL}/oauth-callback?accessToken=${accessToken}`)
+  // res.redirect(`${process.env.CLIENT_URL}/oauth-callback?accessToken=${accessToken}`)
+
+  // now there is no need to send access token via query parameter, as the frontend can request new access token using the refresh token stored in httpOnly cookie
+  // res.redirect(`${process.env.CLIENT_URL}/Hello Frontend`)
+    res.status(200).json({
+    success: true,
+    message: "Social Login Successful (Testing Mode)",
+    data: {
+      provider: userProfile.provider,
+      accessToken: accessToken,
+      userId: user.id,
+      note: "Refresh Token is in HttpOnly Cookie"
+    }
+  });
 
 } //end of controller
+
 ```
 #### step 14.3 src/router/auth.routes.js --> update
 ```js
@@ -1282,4 +1396,12 @@ GOOGLE_CALLBACK_URL="http://localhost:8887/api/v1/auth/google/callback" // <-- m
       socialLoginVerify
     )
   );
+```
+### Step 16 Register github OAuth
+```text
+- setting>Developer setting>OAuth Apps
+- input: Application name: <....>
+- input: Home page URL: <...local page is allowed...>
+- input: Authorization callback URI: <...local page is allowed...>
+- check email is set as public to see
 ```

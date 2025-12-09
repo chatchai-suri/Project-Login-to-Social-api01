@@ -14,7 +14,7 @@ const errorMiddleware = (err, req, res, next) => {
     error.errors = validateErrors;
   }
 
-  res.status(...error, err.statusCode || 500).json({ message: err.message || 'Somthing went wrong' });
+  res.status(err.statusCode || 500).json({...error, message: err.message || 'Somthing went wrong' });
 }
 
 export default errorMiddleware;

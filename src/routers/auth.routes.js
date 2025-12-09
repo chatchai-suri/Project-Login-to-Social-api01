@@ -31,7 +31,7 @@ authRouter.get(
 // GitHub OAuth
 authRouter.get(
   "/github",
-  passport.authenticate("github", { scope: ["user: email"] })
+  passport.authenticate("github", { scope: ["user:email"] })
 ); // redirect to github oauth consent screen
 authRouter.get(
   "/github/callback",
@@ -45,7 +45,7 @@ authRouter.get(
 // Facebook OAuth
 authRouter.get(
   "/facebook",
-  passport.authenticate("facebook", { scope: ["email"] })
+  passport.authenticate("facebook", { scope: ["email", "public_profile"] })
 ); // redirect to facebook oauth consent screen
 authRouter.get(
   "/facebook/callback",

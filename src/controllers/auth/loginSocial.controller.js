@@ -3,16 +3,18 @@ import jwt from "jsonwebtoken";
 import { v4 as uuidv4 } from "uuid";
 import prisma from "../../config/prisma.config.js";
 import { preprocess } from "zod";
+import argon2 from "argon2";
 
 // this controller will handle the user profile received from passport after successful social login
 // and plan to use as common controller for all social login (google, github, facebook)
 // therefore, the passport middleware must respond with req.user containing the user profile as common format, see config/passport.config.js
 export default async function (req, res) {
   const userProfile = req.user;
+  console.log("userProfile from social login:", userProfile);
 
   // step 1: validate the user profile received from passport
   if (!userProfile) {
-    throw createError(400, "User profile not found afrer social login");
+    throw createError(401, "User profile not found after social login");
   }
 
   if (!userProfile.email) {
@@ -30,9 +32,9 @@ export default async function (req, res) {
     // find account with the email and provider
     let account = await tx.account.findUnique({
       where: {
-        provider_providerId: {
+        provider_providerAccountId: { // use 2 keys (provider and providerAccountId) as composite unique key
           provider: userProfile.provider, // e.g., "google"
-          providerId: userProfile.providerId, // e.g., "1234567890"
+          providerAccountId: userProfile.providerId, // e.g., "1234567890"
         },
       },
       include: { user: { omit: { password: true } } }, // include the related user data in the result
@@ -54,7 +56,7 @@ export default async function (req, res) {
           userId: existUser.id,
           type: "oauth",
           provider: userProfile.provider,
-          providerId: userProfile.providerId,
+          providerAccountId: userProfile.providerId,
         },
       });
       return existUser; // return the existing user (we do not update the existing user profile to avoid overwriting existing data), return case 2 of step 2
@@ -76,13 +78,23 @@ export default async function (req, res) {
         userId: newUser.id,
         type: "oauth",
         provider: userProfile.provider,
-        providerId: userProfile.providerId,
+        providerAccountId: userProfile.providerId,
       },
     });
     return newUser; // return the newly created user of case 3 of step 2
   }); // assign the result of the transaction to user and end of step 2
 
+    // 🔍 เพิ่ม Log ตรงนี้เพื่อตรวจสอบค่า user
+  console.log("Debug: User object from transaction:", user);
+
+  if (!user || !user.id) {
+      console.error("Critical Error: User object is invalid after transaction!");
+      throw createError(500, "Failed to retrieve or create user.");
+  }
+
+
   // step 3: generate access token and refresh token for the user (same as login controller)
+  // object user was generated from transaction in step 2
   const payload = { sub: user.id };
   const accessToken = jwt.sign(payload, process.env.ACCESS_TOKEN_SECRET, {
     expiresIn: process.env.ACCESS_TOKEN_EXPIRY,
@@ -118,6 +130,19 @@ export default async function (req, res) {
   });
 
   // redirect to frontend, path must defind
-  res.redirect(`${preprocess.env.CLIENT_URL}/oauth-callback?accessToken=${accessToken}`)
+  // res.redirect(`${process.env.CLIENT_URL}/oauth-callback?accessToken=${accessToken}`)
+
+  // now there is no need to send access token via query parameter, as the frontend can request new access token using the refresh token stored in httpOnly cookie
+  // res.redirect(`${process.env.CLIENT_URL}/Hello Frontend`)
+    res.status(200).json({
+    success: true,
+    message: "Social Login Successful (Testing Mode)",
+    data: {
+      provider: userProfile.provider,
+      accessToken: accessToken,
+      userId: user.id,
+      note: "Refresh Token is in HttpOnly Cookie"
+    }
+  });
 
 } //end of controller

@@ -2,7 +2,7 @@ import argon2 from "argon2";
 import prisma from "../../config/prisma.config.js";
 import createError from "../../utils/createError.js";
 
-export default async function registerController(req, res) {
+export default async function (req, res) {
   // step 1: get user data from req.body
   const { email, name, password, coverImg } = req.body;
 
@@ -21,7 +21,7 @@ export default async function registerController(req, res) {
   // step 4: hash the password for security by argon2
   const hashedPassword = await argon2.hash(password, {
     type: argon2.argon2id, // argon2d, argon2i, argon2id
-    length: 64, // length of the hash
+    hashLength: 64, // length of the hash
   });
 
   // step 5: save the new user to the database

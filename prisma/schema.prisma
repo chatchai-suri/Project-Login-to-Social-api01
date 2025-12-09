@@ -11,7 +11,9 @@ generator client {
 
 datasource db {
   provider = "mysql"
-  url      = env("DATABASE_URL")
+  // move the database url to environment variables for security reason
+  // and set the DATABASE_URL in .env file then use at prisma.config.js
+  // url      = env("DATABASE_URL")
 }
 
 model User {

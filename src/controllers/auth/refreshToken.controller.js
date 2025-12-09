@@ -19,7 +19,7 @@ export default async function (req, res) {
       process.env.REFRESH_TOKEN_SECRET
     );
   } catch (error) {
-    throw createError(401, "Invalid or expired refresh token");
+    throw createError(403, "Invalid or expired refresh token");
   }
 
   const { jti: refreshTokenId } = payloadRefreshToken; // get the jti (unique id) from the payload
@@ -30,7 +30,7 @@ export default async function (req, res) {
   });
 
   if (!findRefreshToken) {
-    throw createError(401, "session not found or already invalidated");
+    throw createError(403, "Token not found. Please login again");
   }
 
   if (findRefreshToken.revoked) {
@@ -43,11 +43,11 @@ export default async function (req, res) {
     );
   }
 
-  constiisMatchRefreshToken = await argon2.verify(
+  const isMatchRefreshToken = await argon2.verify(
     findRefreshToken.hashToken,
     refreshToken
   );
-  if (!iisMatchRefreshToken) {
+  if (!isMatchRefreshToken) {
     throw createError(403, "Invalid refresh token");
   }
 
@@ -70,21 +70,22 @@ export default async function (req, res) {
 
   // step 5: update the database (revoked --> true old one) and hash the new refresh token id and store it in the database
   // use transaction to ensure both operations succeed or fail together
-  await prisma.$transaction(async (tx) => {
+  await prisma.$transaction( async (tx) => {
+    // update old revoked to true
     await tx.refreshToken.updateMany({
-      where: { userId: refreshTokenId },
+      where: {userId: findRefreshToken.userId, revoked: false },
       data: { revoked: true },
-    }); // mark old refresh token as revoked
+    });
+    // create new refresh token record
+    await tx.refreshToken.create({
+      data: {
+        id: newRefreshTokenId,
+        userId: findRefreshToken.userId,
+        hashToken: hashedNewRefreshToken,
+        expiresAt: expiresAt,
+      }
+    })
   })
-
-  await tx.refreshToken.create({
-    data: {
-      id: newRefreshTokenId,
-      userId: findRefreshToken.userId,
-      hashToken: hashedNewRefreshToken,
-      expiresAt: expiresAt,                                     
-    },
-  });
 
   // step 6: send new refresh token to client in httpOnly cookie
   res.cookie("refreshToken", newRefreshToken, {

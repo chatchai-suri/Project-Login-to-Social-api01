@@ -1,3 +1,8 @@
+import jwt from "jsonwebtoken";
+import createError from "../../utils/createError.js";
+import prisma from "../../config/prisma.config.js";
+
+
 export default async function (req, res) {
   // There are main 2 jobs in logout controller
   // 1) clear refresh token assign revoked from flase to be true
@@ -20,7 +25,7 @@ export default async function (req, res) {
       refreshToken,
       process.env.REFRESH_TOKEN_SECRET
     );
-    refreshTokenId = payloadRefreshToken.jti; // get the jti (unique id) from the payload
+    refreshTokenId = payloadRefreshToken.jti;
   } catch (error) {
     // if token is invalid or expired, clear cookie and respond success
     res.clearCookie("refreshToken", {
@@ -41,8 +46,8 @@ export default async function (req, res) {
       secure: process.env.NODE_ENV === "production", // set secure flag in production, via HTTPS
       sameSite: "strict"// protect CSRF
     });
+    throw createError(401, "session not found or already invalidated");
   }
-  throw createError(401, "session not found or already invalidated");
 
   // step 4: mark the refresh token as revoked in the database
   await prisma.refreshToken.update({
