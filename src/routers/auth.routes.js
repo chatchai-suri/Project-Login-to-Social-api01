@@ -61,7 +61,7 @@ authRouter.get(
 // ============================================
 authRouter.get(
   "/line",
-  passport.authenticate("line", { scope: ["profile", "openid", "email"] }) // ❌ ลบ state: false ออก
+  passport.authenticate("line", { scope: ["profile", "openid", "email"] })
 );
 
 authRouter.get(

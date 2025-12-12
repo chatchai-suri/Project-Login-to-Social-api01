@@ -1458,7 +1458,7 @@ import jwt from "jsonwebtoken";
       normalizedProfile.name = profile.displayName || null;
       normalizedProfile.coverImg = profile.pictureUrl || (profile._json && profile._json.pictureUrl) || null;
       break;
-      
+
 //3) at function initializepassport, add class LineStrategy
   passport.use(
     new LineStrategy(
@@ -1483,4 +1483,22 @@ import jwt from "jsonwebtoken";
       }
     )
   );
+```
+#### step 17.4 update src/auth.routes.js
+add 2 endpoints of LINE OAuth (OpenID Connect + OAuth 2.0)
+```js
+authRouter.get(
+  "/line",
+  passport.authenticate("line", { scope: ["profile", "openid", "email"] })
+);
+
+authRouter.get(
+  "/line/callback",
+  passport.authenticate("line", {
+    session: false,
+    failureRedirect: `${process.env.CLIENT_URL}/login`,
+  }),
+  loginSocialController
+);
+
 ```
