@@ -56,4 +56,43 @@ authRouter.get(
   loginSocialController // call loginSocialController which will utilize of req.user
 );
 
+// ============================================
+// LINE Login (OpenID Connect + OAuth 2.0)
+// ============================================
+authRouter.get(
+  "/line",
+  passport.authenticate("line", { scope: ["profile", "openid", "email"] }) // ❌ ลบ state: false ออก
+);
+
+authRouter.get(
+  "/line/callback",
+  passport.authenticate("line", {
+    session: false,
+    failureRedirect: `${process.env.CLIENT_URL}/login`,
+  }),
+  loginSocialController
+);
+
+// ============================================
+// Test Endpoint (Optional - for debugging)
+// ============================================
+authRouter.get("/test-cookie", (req, res) => {
+  console.log("=== COOKIE TEST ===");
+  console.log("All cookies:", req.cookies);
+  console.log("refreshToken cookie:", req.cookies.refreshToken);
+  console.log("==================");
+
+  res.json({
+    success: true,
+    message: "Cookie test endpoint",
+    data: {
+      cookiesReceived: Object.keys(req.cookies),
+      refreshTokenPresent: !!req.cookies.refreshToken,
+      refreshTokenValue: req.cookies.refreshToken
+        ? req.cookies.refreshToken.substring(0, 20) + "..."
+        : null,
+    },
+  });
+});
+
 export default authRouter;

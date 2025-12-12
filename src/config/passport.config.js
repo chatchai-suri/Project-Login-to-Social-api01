@@ -2,6 +2,8 @@ import passport from "passport";
 import { Strategy as GoogleStrategy } from "passport-google-oauth20";
 import { Strategy as GitHubStrategy } from "passport-github2";
 import { Strategy as FacebookStrategy } from "passport-facebook";
+import { Strategy as LineStrategy } from "passport-line-auth";
+import jwt from "jsonwebtoken";
 
 // map the profile object received from passport strategy to a common format
 const socialLoginVerify = (accessToken, refreshToken, profile, done) => {
@@ -13,7 +15,7 @@ const socialLoginVerify = (accessToken, refreshToken, profile, done) => {
     coverImg: null, // initialize coverImg as null
   };
 
-  console.log("profile from passport.config.js", profile) // to monitor key: profile recived from provide
+  console.log(`[Passport] Profile received from ${profile.provider}:`, profile); // to monitor key: profile recived from provide
 
   // extract email and name based on provider, by switch case
   switch (profile.provider) {
@@ -35,7 +37,17 @@ const socialLoginVerify = (accessToken, refreshToken, profile, done) => {
       // normalizedProfile.coverImg = profile._json?.avatat_url; // get the first photo if exists
       normalizedProfile.coverImg = profile.photos?.[0]?.value || null; // get the first photo if exists
       break;
+
+    // Case LINE OAuth
+    case "line":
+      // passport-line-auth maps email into profile.email when scope includes "email"
+      // profile._json.email is just a backup option
+      normalizedProfile.email = profile.email || (profile._json && profile._json.email) || null;
+      normalizedProfile.name = profile.displayName || null;
+      normalizedProfile.coverImg = profile.pictureUrl || (profile._json && profile._json.pictureUrl) || null;
+      break;
   }
+  
 
   return done(null, normalizedProfile); // null indicates no error, pass the normalized profile to the next middleware or controller as req.user
 };
@@ -53,7 +65,7 @@ const initializePassport = () => {
       // orignal function is (accessToken, refreshToken, profile, done) => {
       //  return done(null, profile); return key "profile" and pass to common function socialLoginVerify
       // }
-      socialLoginVerify // is the common function to handle profile from different providers, 
+      socialLoginVerify // is the common function to handle profile from different providers,
     )
   );
 
@@ -75,10 +87,33 @@ const initializePassport = () => {
         clientSecret: process.env.FACEBOOK_CLIENT_SECRET,
         callbackURL: `${process.env.FACEBOOK_CALLBACK_URL}`,
         profileFields: ["id", "displayName", "emails", "photos"], // Request email and name fields from Facebook
-        // 💡 เพิ่ม graphAPIVersion เพื่อแก้ปัญหาเวอร์ชันเก่า
-        graphAPIVersion: 'v19.0', // หรือเวอร์ชันล่าสุดที่รองรับ
+        graphAPIVersion: "v19.0", // apply the latest Graph API version which is v19.0 as of 2024
       },
       socialLoginVerify
+    )
+  );
+
+  passport.use(
+    new LineStrategy(
+      {
+        channelID: process.env.LINE_CHANNEL_ID,
+        channelSecret: process.env.LINE_CHANNEL_SECRET,
+        callbackURL: process.env.LINE_CALLBACK_URL,
+        scope: ["profile", "openid", "email"],
+        botPrompt: "normal",
+
+      },
+
+      // Wrapper Function: receive params (5 arguments) then pass to socialLoginVerify (4 arguments)
+      (accessToken, refreshToken, params, profile, done) => {
+        // decode id_token to get email & insert email from idToken to profile.email if not already set
+        const idToken = params.id_token;
+        if (idToken && !profile.email) {
+          const decoded = jwt.decode(idToken);
+          profile.email = decoded.email;
+        }
+        return socialLoginVerify(accessToken, refreshToken, profile, done);
+      }
     )
   );
 };

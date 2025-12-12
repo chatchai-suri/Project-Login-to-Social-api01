@@ -84,7 +84,7 @@ export default async function (req, res) {
     return newUser; // return the newly created user of case 3 of step 2
   }); // assign the result of the transaction to user and end of step 2
 
-    // 🔍 เพิ่ม Log ตรงนี้เพื่อตรวจสอบค่า user
+    // log the user object for debugging
   console.log("Debug: User object from transaction:", user);
 
   if (!user || !user.id) {

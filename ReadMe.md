@@ -1405,3 +1405,82 @@ GOOGLE_CALLBACK_URL="http://localhost:8887/api/v1/auth/google/callback" // <-- m
 - input: Authorization callback URI: <...local page is allowed...>
 - check email is set as public to see
 ```
+### Step 17 feature LINE OAuth
+#### step 17.1 register "Line Developers"
+```text
+Menu: Basic Setting (mension only important keys)
+- create channel
+- channel: LINE login
+- App tyoe: web App
+- OpenID Connect: Email address permission [Applied]
+- obtain: Channel ID, and Channel Secret
+Menu: Line Login
+- Use LINE Login in your web app [Enable]
+- callback URL: http://localhost:8887/api/v1/auth/callback
+```
+#### step 17.2 install express-session
+LINE OAuth, as OpenID requires state for security reasons.
+Therefore and session to make local memory space to keep state.
+However, to maintain app as stateless,app.js is add some codes (see next step)
+```bash
+npm install express-session
+```
+#### step 17.3 update src/app.js
+```js
+import session from 'express-session'; // import session after install
+// set up express-session middleware before passport session
+// Session is required for OAuth2 state management, not for persistent login sessions
+// still app is stateless as we do not use passport session management
+app.use(session({
+  secret: process.env.ACCESS_TOKEN_SECRET || 'secret_key_for_oauth_state', // any secret key for signing the session ID cookie
+  resave: false,
+  saveUninitialized: false,
+  cookie: { 
+    secure: process.env.NODE_ENV === 'production', // true on production
+    maxAge: 60000 // just 1 min for logging purpose
+  }
+}));
+
+// set passport initialize
+initializePassport();
+app.use(passport.initialize());
+```
+#### step 17.4 update src/passport.config.js
+```js
+// 1) import jwt to use decode id_token returned from LINE oauth
+import jwt from "jsonwebtoken";
+
+//2) at function socialLoginVerify add case "line"
+    case "line":
+      // passport-line-auth maps email into profile.email when scope includes "email"
+      // profile._json.email is just a backup option
+      normalizedProfile.email = profile.email || (profile._json && profile._json.email) || null;
+      normalizedProfile.name = profile.displayName || null;
+      normalizedProfile.coverImg = profile.pictureUrl || (profile._json && profile._json.pictureUrl) || null;
+      break;
+      
+//3) at function initializepassport, add class LineStrategy
+  passport.use(
+    new LineStrategy(
+      {
+        channelID: process.env.LINE_CHANNEL_ID,
+        channelSecret: process.env.LINE_CHANNEL_SECRET,
+        callbackURL: process.env.LINE_CALLBACK_URL,
+        scope: ["profile", "openid", "email"],
+        botPrompt: "normal",
+
+      },
+
+      // Wrapper Function: receive params (5 arguments) then pass to socialLoginVerify (4 arguments)
+      (accessToken, refreshToken, params, profile, done) => {
+        // decode id_token to get email & insert email from idToken to profile.email if not already set
+        const idToken = params.id_token;
+        if (idToken && !profile.email) {
+          const decoded = jwt.decode(idToken);
+          profile.email = decoded.email;
+        }
+        return socialLoginVerify(accessToken, refreshToken, profile, done);
+      }
+    )
+  );
+```
